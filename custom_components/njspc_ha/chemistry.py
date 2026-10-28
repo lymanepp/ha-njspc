@@ -46,6 +46,34 @@ from .const import (
     SUPER_CHLOR
 )
 
+
+def _tank_units_name(units: Any, current: str | None = None) -> str | None:
+    """Return a tank's volume-unit name.
+
+    The full chem controller config sends units as an object
+    ({"val": .., "name": .., "desc": ..}); chemController update events send
+    only the numeric value. Keep the name already known in that case instead
+    of failing, so the tank level that follows still updates.
+    """
+    if isinstance(units, dict):
+        return units.get("name", current)
+    return current if current is not None else str(units)
+
+def _tank_level_percent(level: Any, capacity: Any) -> float | None:
+    """Return a tank's fill level as a percentage of capacity.
+
+    A tank configured with no capacity (0) has no meaningful percentage, so it
+    reports unknown instead of dividing by zero. A capacity that isn't sent at
+    all keeps the original behavior of reporting 0.
+    """
+    if capacity is None:
+        return 0
+    if not capacity:
+        return None
+    return round(level / capacity, 2) * 100
+
+
+
 class FlowDetectedSensor(PoolEquipmentEntity, BinarySensorEntity):
     """The current freeze protection status for the control panel"""
 
@@ -531,14 +559,11 @@ class ChemistryTankLevel(PoolEquipmentEntity, SensorEntity):
             if "capacity" in tank:
                 self._state_attributes["capacity"] = tank["capacity"]
             if "units" in tank:
-                self._state_attributes["units"] = tank["units"]["name"]
+                self._state_attributes["units"] = _tank_units_name(tank["units"])
 
             if "level" in tank:
                 self._state_attributes["level"] = tank["level"]
-                if "capacity" in tank:
-                    self._value = round(tank["level"] / tank["capacity"], 2) * 100
-                else:
-                    self._value = 0
+                self._value = _tank_level_percent(tank["level"], tank.get("capacity"))
             self._available = True
         else:
             self._available = False
@@ -557,14 +582,13 @@ class ChemistryTankLevel(PoolEquipmentEntity, SensorEntity):
                 if "capacity" in tank:
                     self._state_attributes["capacity"] = tank["capacity"]
                 if "units" in tank:
-                    self._state_attributes["units"] = tank["units"]["name"]
+                    self._state_attributes["units"] = _tank_units_name(
+                        tank["units"], self._state_attributes.get("units")
+                    )
 
                 if "level" in tank:
                     self._state_attributes["level"] = tank["level"]
-                    if "capacity" in tank:
-                        self._value = round(tank["level"] / tank["capacity"], 2) * 100
-                    else:
-                        self._value = 0
+                    self._value = _tank_level_percent(tank["level"], tank.get("capacity"))
                 self._available = True
             else:
                 self._available = False
